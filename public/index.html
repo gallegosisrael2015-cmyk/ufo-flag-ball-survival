@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>UFO: Flag Ball Survival - Online Multiplayer</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 50% -20%,#1c4770,#081321 65%);font-family:system-ui,Segoe UI,sans-serif;color:#f4f8ff}
+header{padding:18px 5vw;border-bottom:1px solid #29435e;background:#081321aa;font-size:22px;font-weight:950}header span{color:#54dcff}
+main{max-width:1100px;margin:24px auto;padding:0 16px}.hero{text-align:center;margin:15px auto 22px}.hero h1{font-size:clamp(28px,5vw,48px);margin:0}.hero h1 span{color:#54dcff}.hero p{color:#b9c9dc}
+.panel{background:#102137;border:1px solid #29435e;border-radius:16px;padding:14px;box-shadow:0 18px 50px #0005}
+.lobby{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:12px}.lobby input{min-width:130px;flex:1;background:#09182a;border:1px solid #46617e;color:white;padding:12px;border-radius:9px;font-size:16px}
+button{border:0;border-radius:10px;padding:11px 16px;font-weight:900;color:#04121d;background:linear-gradient(135deg,#75eaff,#31b8ed);cursor:pointer}button.secondary{background:#263e59;color:#e8f5ff;border:1px solid #46617e}
+#message{color:#b9eaff;font-size:13px;min-height:22px;margin:5px 0 10px}.gamehead{display:flex;justify-content:space-between;gap:10px;margin-bottom:10px;color:#b9d4eb}canvas{width:100%;height:auto;display:block;border-radius:12px;border:2px solid #35516d;background:#172b35;touch-action:none}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}.stat{background:#09182a;border:1px solid #29435e;border-radius:10px;padding:8px;text-align:center}.stat small{display:block;color:#a6bad0;font-size:10px;font-weight:800}.stat b{font-size:20px}
+.help{color:#b8c9db;font-size:13px;line-height:1.5;margin-top:12px}.hidden{display:none!important}.code{font-size:24px;font-weight:950;letter-spacing:4px;color:#65e4ff}
+@media(max-width:600px){.stats{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<header>🛸 UFO: <span>FLAG BALL</span> SURVIVAL — ONLINE</header>
+<main>
+<section class="hero"><h1>DON'T GET <span>ABDUCTED.</span></h1><p>Play online with friends. Create a room, share its code, and survive the UFO together!</p></section>
+<section class="panel">
+  <div class="lobby">
+    <button id="create">CREATE ROOM</button>
+    <input id="roomInput" maxlength="6" placeholder="Enter room code">
+    <button id="join" class="secondary">JOIN ROOM</button>
+    <button id="start" class="secondary hidden">START GAME</button>
+  </div>
+  <div id="message">Connect to the game server to get started.</div>
+  <div id="roomInfo" class="hidden">ROOM CODE: <span id="roomCode" class="code"></span> · Share this code with your friends.</div>
+  <div class="gamehead"><strong>🌎 ABDUCTION ARENA</strong><span id="status">WAITING</span></div>
+  <canvas id="field" width="800" height="510"></canvas>
+  <div class="stats">
+    <div class="stat"><small>PLAYERS</small><b id="players">0</b></div><div class="stat"><small>SURVIVORS</small><b id="alive">0</b></div><div class="stat"><small>ELIMINATED</small><b id="dead">0</b></div><div class="stat"><small>TIME</small><b id="clock">0:00</b></div>
+  </div>
+  <p class="help">Move with WASD / arrow keys, or drag on the arena. Each player controls their own country flag. One UFO hunts the closest surviving ball. If it chases a player for 15 seconds without catching them, it gives up and targets another flag.</p>
+</section>
+</main>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+(()=>{
+const socket=io(); const c=document.getElementById('field'),ctx=c.getContext('2d'),W=800,H=510;
+const $=id=>document.getElementById(id);
+const flags=['🇺🇸','🇬🇧','🇨🇦','🇧🇷','🇩🇪','🇫🇷','🇯🇵','🇮🇳','🇲🇽','🇦🇺','🇮🇹','🇪🇸','🇵🇹','🇳🇱','🇧🇪','🇨🇭','🇸🇪','🇳🇴','🇫🇮','🇩🇰','🇵🇱','🇺🇦','🇹🇷','🇬🇷','🇰🇷','🇨🇳','🇹🇭','🇻🇳','🇵🇭','🇮🇩','🇳🇿','🇦🇷','🇨🇱','🇨🇴','🇵🇪','🇿🇦','🇪🇬','🇳🇬','🇸🇦','🇮🇱'];
+let room=null,myId=null,state=null,keys={},pointer=null,lastInput=0;
+socket.on('connect',()=>{$('message').textContent='Connected! Create a room or enter a friend’s room code.';});
+socket.on('connect_error',()=>{$('message').textContent='Could not connect to the server. Check that the online server is running.';});
+socket.on('room',d=>{room=d.code;myId=d.playerId;$('roomInfo').classList.remove('hidden');$('roomCode').textContent=room;$('start').classList.remove('hidden');$('message').textContent='You joined the room. Share the code with friends!';});
+socket.on('joined',d=>{room=d.code;myId=d.playerId;$('roomInfo').classList.remove('hidden');$('roomCode').textContent=room;$('start').classList.remove('hidden');$('message').textContent='Joined room '+room+'!';});
+socket.on('errorMessage',m=>$('message').textContent=m);
+socket.on('state',s=>{state=s;render();});
+$('create').onclick=()=>socket.emit('createRoom');
+$('join').onclick=()=>{const code=$('roomInput').value.trim().toUpperCase();if(code)socket.emit('joinRoom',code);else $('message').textContent='Enter a room code first.';};
+$('start').onclick=()=>socket.emit('startGame');
+window.addEventListener('keydown',e=>{keys[e.key.toLowerCase()]=true;if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(e.key.toLowerCase()))e.preventDefault();});
+window.addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+function pointerPos(e){const r=c.getBoundingClientRect();pointer={x:(e.clientX-r.left)*W/r.width,y:(e.clientY-r.top)*H/r.height};}
+c.addEventListener('pointerdown',e=>{c.setPointerCapture(e.pointerId);pointerPos(e);});
+c.addEventListener('pointermove',e=>{if(e.buttons)pointerPos(e);});c.addEventListener('pointerup',()=>pointer=null);c.addEventListener('pointercancel',()=>pointer=null);
+setInterval(()=>{if(!room||!state||state.status!=='playing')return;let x=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0),y=(keys.s||keys.arrowdown?1:0)-(keys.w||keys.arrowup?1:0);if(pointer){const me=state.balls.find(b=>b.id===myId);if(me){x=pointer.x-me.x;y=pointer.y-me.y;const d=Math.hypot(x,y);if(d>8){x/=d;y/=d}else{x=0;y=0}}}socket.emit('input',{x,y});},50);
+function drawBall(b){ctx.save();ctx.translate(b.x,b.y);ctx.beginPath();ctx.arc(0,0,b.r,0,Math.PI*2);ctx.fillStyle='#f5f5f5';ctx.fill();ctx.clip();ctx.fillStyle=flagColor(b.flag);ctx.fillRect(-b.r,-b.r,b.r*2,b.r*2);ctx.font=`${b.r*1.55}px serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(b.flag,0,1);ctx.restore();ctx.beginPath();ctx.arc(b.x,b.y,b.r+2,0,Math.PI*2);ctx.strokeStyle=b.id===myId?'#55dfff':'#17212e';ctx.lineWidth=b.id===myId?3:1;ctx.stroke();if(b.id===myId){ctx.fillStyle='white';ctx.font='bold 11px sans-serif';ctx.textAlign='center';ctx.fillText('YOU',b.x,b.y-25)}}
+function flagColor(f){return f==='🇯🇵'||f==='🇰🇷'?'#fff':f==='🇺🇸'?'#b22234':'#2374b8'}
+function render(){if(!state)return;ctx.clearRect(0,0,W,H);ctx.fillStyle='#172b35';ctx.fillRect(0,0,W,H);ctx.strokeStyle='#284b43';for(let x=0;x<W;x+=40){ctx.beginPath();ctx.moveTo(x,35);ctx.lineTo(x,H);ctx.stroke()}for(let y=35;y<H;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}ctx.strokeStyle='#a1a1aa';ctx.lineWidth=8;ctx.strokeRect(4,4,W-8,H-8);ctx.fillStyle='#aab8c7';ctx.font='bold 15px sans-serif';ctx.fillText('ALIEN ABDUCTION ARENA',20,25);
+for(const u of state.ufos){const t=state.balls.find(b=>b.id===u.target);if(t){ctx.beginPath();ctx.moveTo(u.x-38,u.y+55);ctx.lineTo(u.x+38,u.y+55);ctx.lineTo(t.x+20,t.y);ctx.lineTo(t.x-20,t.y);ctx.closePath();ctx.fillStyle='rgba(70,220,255,.17)';ctx.fill();ctx.beginPath();ctx.arc(t.x,t.y,25,0,Math.PI*2);ctx.strokeStyle='#ff5555';ctx.lineWidth=3;ctx.stroke()}ctx.fillStyle='#b5e7f5';ctx.beginPath();ctx.ellipse(u.x,u.y,49,16,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#4cb6dd';ctx.beginPath();ctx.ellipse(u.x,u.y-9,23,15,0,Math.PI,Math.PI*2);ctx.fill()}
+for(const b of state.balls)if(b.alive)drawBall(b);
+$('players').textContent=state.players;$('alive').textContent=state.alive;$('dead').textContent=state.dead;$('clock').textContent=Math.floor(state.elapsed/60)+':'+String(Math.floor(state.elapsed%60)).padStart(2,'0');$('status').textContent=state.status.toUpperCase();if(state.status==='finished')$('message').textContent=state.winner===myId?'🏆 YOU WON!':'Round over! Start another round when ready.';else if(state.status==='playing')$('message').textContent='Game in progress — good luck!';}
+})();
+</script>
+</body></html>
